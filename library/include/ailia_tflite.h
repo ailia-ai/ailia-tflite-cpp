@@ -3,13 +3,13 @@
 * @file
 * @brief AILIA TFLITE RUNTIME INTERFACE
 * @copyright AXELL CORPORATION, ailia Inc.
-* @date  July 10, 2026
+* @date  October 30, 2026
 *
 * \~english
 * @file
 * @brief AILIA TFLITE RUNTIME INTERFACE
 * @copyright AXELL CORPORATION, ailia Inc.
-* @date  July 10, 2026
+* @date  October 30, 2026
 */
 #if       !defined(INCLUDED_AILIA_TFLITE)
 #define            INCLUDED_AILIA_TFLITE
@@ -781,11 +781,11 @@ extern "C" {
     * @details
     *   内部の形状を更新し、推論に必要なバッファーを確保します。
     *   ビルド時に BUILD_MODEL_DETACH を有効にしている場合、
-    *   ailiaTFLiteAllocateTensors が成功した後は入力 tflite バッファを解放してよい。
-    *   解放後は共有インスタンスを作成できない。
-    *   失敗した場合は ailiaTFLiteDestroy を呼ぶまで入力 tflite バッファを保持する必要がある。
+    *   ailiaTFLiteAllocateTensors が成功した後は入力 tflite バッファを解放できます。
+    *   解放後は共有インスタンスを作成できません。
+    *   失敗した場合は ailiaTFLiteDestroy を呼ぶまで入力 tflite バッファを保持する必要があります。
     *   AILIA_TFLITE_ENV_MMALIB では ailiaTFLiteAllocateTensors 実行後の
-    *   ailiaTFLiteResizeInputTensor による shape 変更と再度の ailiaTFLiteAllocateTensors はできない。
+    *   ailiaTFLiteResizeInputTensor による shape 変更と再度の ailiaTFLiteAllocateTensors はできません。
     *
     * \~english
     * @brief Ensure the internal buffer of ailia TFLite runtime
