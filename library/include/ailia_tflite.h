@@ -3,13 +3,13 @@
 * @file
 * @brief AILIA TFLITE RUNTIME INTERFACE
 * @copyright AXELL CORPORATION, ailia Inc.
-* @date  December 10, 2025
+* @date  October 30, 2026
 *
 * \~english
 * @file
 * @brief AILIA TFLITE RUNTIME INTERFACE
 * @copyright AXELL CORPORATION, ailia Inc.
-* @date  December 10, 2025
+* @date  October 30, 2026
 */
 #if       !defined(INCLUDED_AILIA_TFLITE)
 #define            INCLUDED_AILIA_TFLITE
@@ -548,6 +548,16 @@ extern "C" {
     * @brief I8MM
     */
     #define AILIA_TFLITE_CPU_FEATURES_I8MM   (0x00000080)
+    /**
+    * \~japanese
+    * @def AILIA_TFLITE_CPU_FEATURES_DOTPROD
+    * @brief ARM DOTPROD
+    *
+    * \~english
+    * @def AILIA_TFLITE_CPU_FEATURES_DOTPROD
+    * @brief ARM DOTPROD
+    */
+    #define AILIA_TFLITE_CPU_FEATURES_DOTPROD (0x00000100)
 
     /**
     * \~japanese
@@ -656,6 +666,39 @@ extern "C" {
 
     /**
     * \~japanese
+    * @brief 内部パラメータを共有するインスタンスを作成します。
+    * @param ppinstance 作成したインスタンスの格納先。
+    * @param ref_inst AllocateTensorsが成功したREFERENCE、MMALIB_COMPATIBLEまたはMMALIBインスタンス。
+    *   ailiaTFLiteCreateSharedInstanceで作成したインスタンスは指定できません（AILIA_TFLITE_STATUS_INVALID_ARGUMENT）。
+    * @return 成功時はAILIA_TFLITE_STATUS_SUCCESS、失敗時はAILIA_TFLITE_STATUS_XXX。
+    * @details
+    *   失敗時も*ppinstanceがNULL以外ならailiaTFLiteDestroyを呼んでください。
+    *   共有先の作成・AllocateTensorsには、元のtfliteバッファも必要です。
+    *   作成直後は未確保です。必要に応じてResizeInputTensorを行い、各インスタンス固有の
+    *   スクラッチバッファ・サブコア制御変数・同期関数を設定してからAllocateTensorsを呼んでください。
+    *   アロケータ（ハンドルを含む）、実行環境、メモリモード、フラグ、CPU設定を継承します。
+    *   最初の所有インスタンスは全共有先より後に破棄し、共有先の生存中はResize・再Allocateしないでください。
+    *
+    * \~english
+    * @brief Create an instance sharing internal parameters.
+    * @param ppinstance Receives the created instance.
+    * @param ref_inst Successfully allocated REFERENCE, MMALIB_COMPATIBLE or MMALIB instance.
+    *   An instance created by ailiaTFLiteCreateSharedInstance cannot be used (AILIA_TFLITE_STATUS_INVALID_ARGUMENT).
+    * @return AILIA_TFLITE_STATUS_SUCCESS on success, or AILIA_TFLITE_STATUS_XXX on failure.
+    * @details
+    *   On failure, call ailiaTFLiteDestroy if *ppinstance is non-NULL.
+    *   The original tflite buffer must remain valid during shared instance creation and AllocateTensors.
+    *   The new instance is unallocated. Call ResizeInputTensor if needed, configure per-instance
+    *   scratch buffers, subcore controls and synchronization callbacks, then call AllocateTensors.
+    *   Inherits allocator (including handle), environment, memory mode, flags and CPU settings.
+    *   The original owning instance must outlive all shared instances. Do not resize or reallocate
+    *   that owner while any shared instance is alive.
+    */
+    AILIATFLiteStatus
+    ailiaTFLiteCreateSharedInstance(struct AILIATFLiteInstance **ppinstance, const struct AILIATFLiteInstance *ref_inst);
+
+    /**
+    * \~japanese
     * @brief ailia TFLite runtimeのインスタンスを破棄します。
     * @param instance      ailia TFLite runtimeインスタンスポインター
     *
@@ -737,6 +780,12 @@ extern "C" {
     *   失敗した場合はAILIA_TFLITE_STATUS_XXXを返します。
     * @details
     *   内部の形状を更新し、推論に必要なバッファーを確保します。
+    *   ビルド時に BUILD_MODEL_DETACH を有効にしている場合、
+    *   ailiaTFLiteAllocateTensors が成功した後は入力 tflite バッファを解放できます。
+    *   解放後は共有インスタンスを作成できません。
+    *   失敗した場合は ailiaTFLiteDestroy を呼ぶまで入力 tflite バッファを保持する必要があります。
+    *   AILIA_TFLITE_ENV_MMALIB では ailiaTFLiteAllocateTensors 実行後の
+    *   ailiaTFLiteResizeInputTensor による shape 変更と再度の ailiaTFLiteAllocateTensors はできません。
     *
     * \~english
     * @brief Ensure the internal buffer of ailia TFLite runtime
@@ -746,6 +795,12 @@ extern "C" {
     *   If you fail, return AILIA_TFLITE_STATUS_XXX.
     * @details
     *   Update the internal shape and secure the buffer required for inference.
+    *   When BUILD_MODEL_DETACH is enabled, the caller may free the input tflite buffer
+    *   after ailiaTFLiteAllocateTensors succeeds. If it fails, the buffer must remain
+    *   valid until ailiaTFLiteDestroy is called.
+    *   Shared instances cannot be created after the input buffer has been freed.
+    *   With AILIA_TFLITE_ENV_MMALIB, ailiaTFLiteResizeInputTensor (shape change) and a second
+    *   ailiaTFLiteAllocateTensors are not allowed after ailiaTFLiteAllocateTensors.
     */
     AILIATFLiteStatus
     ailiaTFLiteAllocateTensors(struct AILIATFLiteInstance * instance);
@@ -1677,6 +1732,67 @@ extern "C" {
     AILIATFLiteStatus
     ailiaTFLiteGetScratchBufferUsageEx(struct AILIATFLiteInstance* instance, size_t* int_buffer_size, size_t* mid_buffer_size, size_t* ext_buffer_size, size_t* global_buffer_size);
 
+    /****************************************************************
+    * スレッド設定API
+    **/
+
+    /**
+    * \~japanese
+    * @brief グローバルなスレッドプールのスレッド数を設定します
+    * @param num_threads   スレッド数（1以上）
+    * @return
+    *   成功した場合はAILIA_TFLITE_STATUS_SUCCESSを返します。
+    *   失敗した場合はAILIA_TFLITE_STATUS_XXXを返します。
+    * @details
+    *   デフォルトでは自動設定となります。
+    *   最初の ailiaTFLiteCreate の前に呼び出す必要があります。
+    *   ailiaTFLiteCreate以降に呼び出すとAILIA_TFLITE_STATUS_INVALID_ARGUMENTを返します。
+    *
+    * \~english
+    * @brief Set the number of threads for the global thread pool.
+    * @param num_threads   Number of threads (1 or more)
+    * @return
+    *   Returns AILIA_TFLITE_STATUS_SUCCESS on success.
+    *   Returns AILIA_TFLITE_STATUS_XXX on failure.
+    * @details
+    *   By default, the thread count is determined automatically.
+    *   Must be called before the first ailiaTFLiteCreate call.
+    *   If called after ailiaTFLiteCreate, it returns AILIA_TFLITE_STATUS_INVALID_ARGUMENT.
+    */
+    AILIATFLiteStatus
+    ailiaTFLiteThreadPoolSetNumThreads(int32_t num_threads);
+
+    /**
+    * \~japanese
+    * @brief インスタンスの推論に使用するスレッド数を設定します
+    * @param instance      ailia TFLite runtimeインスタンスポインター
+    * @param num_threads   スレッド数（1以上）
+    * @return
+    *   成功した場合はAILIA_TFLITE_STATUS_SUCCESSを返します。
+    *   失敗した場合はAILIA_TFLITE_STATUS_XXXを返します。
+    * @details
+    *   インスタンスの推論に使用するスレッド数を指定します。
+    *   デフォルトではスレッドプールのスレッド数を使用します。
+    *   スレッドプールのスレッド数よりも大きい値を設定した場合、スレッドプールのスレッド数が設定されます。
+    *   ailiaTFLiteAllocateTensors の前に呼び出す必要があります。
+    *   ailiaTFLiteAllocateTensors以降に呼び出すとAILIA_TFLITE_STATUS_INVALID_ARGUMENTを返します。
+    *
+    * \~english
+    * @brief Set the number of threads used for inference per instance.
+    * @param instance      ailia TFLite runtime instance pointer
+    * @param num_threads   Number of threads (1 or more)
+    * @return
+    *   Returns AILIA_TFLITE_STATUS_SUCCESS on success.
+    *   Returns AILIA_TFLITE_STATUS_XXX on failure.
+    * @details
+    *   Sets the number of threads used for inference in the specified instance.
+    *   By default, the value from the global thread pool is used.
+    *   If a value larger than the number of threads in the thread pool is set, the number of threads in the thread pool will be used.
+    *   Must be called before ailiaTFLiteAllocateTensors.
+    *   If called after ailiaTFLiteAllocateTensors, it returns AILIA_TFLITE_STATUS_INVALID_ARGUMENT.
+    */
+    AILIATFLiteStatus
+    ailiaTFLiteSetNumThreads(struct AILIATFLiteInstance *instance, int32_t num_threads);
 
     /****************************************************************
     * MKL設定API
@@ -1736,6 +1852,10 @@ extern "C" {
     AILIATFLiteStatus
     ailiaTFLiteMklDisableFastMM(void);
 
+    /****************************************************************
+    * サブコアのAPI
+    **/
+
     /**
     * \~japanese
     * @brief マルチコアで使用する場合において、コア間の同期関数を設定します。
@@ -1776,7 +1896,7 @@ extern "C" {
     *   Specify number of sub-cores to sub_core_count, and specify a structure array with sub_core_count elements to control_variables.
     */
     AILIATFLiteStatus
-    alilaTFLiteSetSubCoreControlVariables(struct AILIATFLiteInstance* instance, const struct AILIATFLiteSubCoreControlVariables* control_variables, int32_t sub_core_count);
+    ailiaTFLiteSetSubCoreControlVariables(struct AILIATFLiteInstance* instance, const struct AILIATFLiteSubCoreControlVariables* control_variables, int32_t sub_core_count);
 
     /****************************************************************
     * DSA結果の保存と復元のAPI
